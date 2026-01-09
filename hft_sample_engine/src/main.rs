@@ -6,6 +6,7 @@ use rsocket_rust_transport_tcp::TcpClientTransport;
 
 mod conn_manager;
 mod configs;
+mod data_struc;
 
 fn main() {
     
@@ -41,37 +42,18 @@ async fn execute_program(){
 
     let mut peers = configs::read_config_file().unwrap();
     let connec = conn_manager::create_instance(peers.clone()).await.unwrap();
-    
-    //let conn = connections.connections.get("server_source").unwrap();
-
-    //let rt = Runtime::new().unwrap();
-
-    //rt.block_on(conn.InitConnections(peer));
-    //let cli2 = connec.connections.get("server_source").unwrap();
-    
-    //let method2 = "{\"method\":\"execute_something\"}";
-    //let data2 = "{\"method\":\"/execute_something\",\"payload\":{}}";
-    //    let req2 = Payload::builder()
-    //        .set_data_utf8(&data2)
-    //        .set_metadata_utf8(method2)
-    //        .build();
-
-    //    let rt2 = Runtime::new().unwrap();
-
-     //   let res2 = rt2.block_on(cli2.request_response(req2));
-     //   println!("{}", res2.unwrap().expect("data").data_utf8().unwrap());
-
-
-    //println!("{}", connec.connections.len()); 
-    //let result = execute_in_cluster("execute_something", "{}", peers[0].clone(), &connec).await;
-    
-    
+   
     let result = match execute_in_cluster("execute_something", "{}", peers[0].clone(), &connec).await{
         Ok(data) => data,
         _ => { return (); }
     };
 
-    println!("{}", result);
+    //println!("{}", result);
+
+    let mut prices : data_struc::PriceRanges = serde_json::from_str(&result).unwrap();
+    //serde_json::from_str(result)
+    println!("{:?}", prices);
+
     
 }
 
@@ -82,33 +64,7 @@ async fn execute_in_cluster(name_method: &str, data_json: &str, peer: configs::P
     let port_peer = peer.port;
     let host_peer = peer.ip;
     let host_server = format!("{host_peer}:{port_peer}");
-    
-
     println!("{}", name_peer);
-    
-    // let cli = RSocketFactory::connect()
-    //     .transport(TcpClientTransport::from(host_server))
-    //     .setup(Payload::from("READY!"))
-    //     .mime_type("text/plain", "text/plain")
-    //     .on_close(Box::new(|| println!("connection closed")))
-    //     .start()
-    //     .await?;
-    //let conn = connections.lock().unwrap();
-    //let connCli = conn.connections.get(&name_peer).unwrap();
-
-    //let cli2 = conn.connections.get("server_source").unwrap();
-    
-    //let method2 = "{\"method\":\"execute_something\"}";
-    //let data2 = "{\"method\":\"/execute_something\",\"payload\":{}}";
-    //    let req2 = Payload::builder()
-    //        .set_data_utf8(&data2)
-    //        .set_metadata_utf8(method2)
-    //        .build();
-
-
-
-    //    let res2 = cli2.request_response(req2).await?;
-    //    println!("{}", res2.expect("SMTH").data_utf8().unwrap());
 
     if let Some(cli) = conn.connections.get(&name_peer){    
         println!("GOT THE CONNECTION IN HASH");
@@ -118,7 +74,6 @@ async fn execute_in_cluster(name_method: &str, data_json: &str, peer: configs::P
             .set_data_utf8(&data)
             .set_metadata_utf8(method)
             .build();
-
 
         let res = cli.request_response(req).await?;
 
