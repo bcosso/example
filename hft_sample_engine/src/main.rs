@@ -3,6 +3,7 @@ use tokio::runtime::Runtime;
 use rsocket_rust::prelude::*;
 use rsocket_rust::Result;
 use rsocket_rust_transport_tcp::TcpClientTransport;
+use std::collections::{HashMap, BTreeMap};
 
 mod conn_manager;
 mod configs;
@@ -48,11 +49,16 @@ async fn execute_program(){
         _ => { return (); }
     };
 
-    //println!("{}", result);
+    println!("{}", result);
 
-    let mut prices : data_struc::PriceRanges = serde_json::from_str(&result).unwrap();
+    //let mut prices = data_struc::PriceRanges::new(); 
+    
+    //let mut prices: data_struc::PriceRanges = serde_json::from_str(&result).unwrap(); 
+    let mut security: HashMap<String, data_struc::PriceRanges> = serde_json::from_str(&result).unwrap(); 
+   
+
     //serde_json::from_str(result)
-    println!("{:?}", prices);
+    println!("{:?}", security);
 
     
 }
