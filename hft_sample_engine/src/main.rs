@@ -1,3 +1,4 @@
+use data_struc::Order;
 use rsocket_rust::Client;
 use tokio::runtime::Runtime;
 use rsocket_rust::prelude::*;
@@ -56,12 +57,65 @@ async fn execute_program(){
     //let mut prices: data_struc::PriceRanges = serde_json::from_str(&result).unwrap(); 
     let mut security: HashMap<String, data_struc::PriceRanges> = serde_json::from_str(&result).unwrap(); 
    
+    let result2 = match execute_in_cluster("execute_something", "{}", peers[0].clone(), &connec).await{
+        Ok(data) => data,
+        _ => { return (); }
+    };
 
+    println!("{}", result2);
+
+    //let mut prices = data_struc::PriceRanges::new(); 
+    
+    //let mut prices: data_struc::PriceRanges = serde_json::from_str(&result).unwrap(); 
+    let mut security2: HashMap<String, data_struc::PriceRanges> = serde_json::from_str(&result2).unwrap();
     //serde_json::from_str(result)
-    println!("{:?}", security);
+    println!("{:?}", security2);
 
     
 }
+
+
+#[derive(Clone, Debug)]
+enum Value<'b, K, Leaf> {
+    Leaf(Leaf),
+    Map(HashMap<K, Value<'b, K, Leaf>>),
+    OOrder(Order<'b>),
+}
+
+
+fn build<K, L>(
+    key: &K,
+    src: &HashMap<K, Value<K, L>>,
+    dst: &mut HashMap<K, Value<K, L>>,
+)
+where
+    K: Eq + std::hash::Hash + Clone,
+    L: Clone,
+{
+    if dst.contains_key(key) {
+        return;
+    }
+
+    if let Some(v) = src.get(key) {
+        match v {
+            Value::Leaf(l) => {
+                dst.insert(key.clone(), Value::Leaf(l.clone()));
+            }
+            Value::Map(map) => {
+                let mut new_map = HashMap::new();
+                for child_key in map.keys() {
+                    build(child_key, map, &mut new_map);
+                }
+                dst.insert(key.clone(), Value::Map(new_map));
+            }
+            Value::OOrder(ord) => {
+                
+            } 
+        }
+    }
+}
+
+
 
 
 async fn execute_in_cluster(name_method: &str, data_json: &str, peer: configs::Peer, conn: &conn_manager::ConnManager) -> Result<String>{

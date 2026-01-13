@@ -9,7 +9,7 @@ use serde_with::*;
 
 
 #[serde_as]
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Order<'b> {
     pub name: &'b str,
     pub order_id: i32,
