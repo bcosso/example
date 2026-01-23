@@ -1,14 +1,18 @@
 use data_struc::Order;
+use data_struc::PriceRanges;
 use rsocket_rust::Client;
 use tokio::runtime::Runtime;
 use rsocket_rust::prelude::*;
 use rsocket_rust::Result;
 use rsocket_rust_transport_tcp::TcpClientTransport;
 use std::collections::{HashMap, BTreeMap};
+use std::hash::Hash;
 
 mod conn_manager;
 mod configs;
 mod data_struc;
+
+
 
 fn main() {
     
@@ -54,7 +58,7 @@ async fn execute_program(){
 
     //let mut prices = data_struc::PriceRanges::new(); 
     
-    //let mut prices: data_struc::PriceRanges = serde_json::from_str(&result).unwrap(); 
+    //let mut prices: data_struc::PriceRanges = serde_json::from_str(&result)?; 
     let mut security: HashMap<String, data_struc::PriceRanges> = serde_json::from_str(&result).unwrap(); 
    
     let result2 = match execute_in_cluster("execute_something", "{}", peers[0].clone(), &connec).await{
@@ -67,29 +71,104 @@ async fn execute_program(){
     //let mut prices = data_struc::PriceRanges::new(); 
     
     //let mut prices: data_struc::PriceRanges = serde_json::from_str(&result).unwrap(); 
-    let mut security2: HashMap<String, data_struc::PriceRanges> = serde_json::from_str(&result2).unwrap();
+    let security2: HashMap<String, data_struc::PriceRanges> = serde_json::from_str(&result2).unwrap();
     //serde_json::from_str(result)
     println!("{:?}", security2);
+    
+    
+let security_wrapped: HashMap<String, Value<String, data_struc::PriceRanges>> =
+    security
+        .into_iter()
+        .map(|(k, v)| (k, Value::Leaf(v)))
+        .collect();
+
+let security_wrapped2: HashMap<String, Value<String, data_struc::PriceRanges>> =
+    security2
+        .into_iter()
+        .map(|(k, v)| (k, Value::Leaf(v)))
+        .collect();
+
+    let src = AnyMap::Hash(security_wrapped);
+    let mut dst = AnyMap::Hash(security_wrapped2);
+
+
+    build(&"AMZ".to_string() , &src, &mut dst);
 
     
 }
 
-
 #[derive(Clone, Debug)]
-enum Value<'b, K, Leaf> {
-    Leaf(Leaf),
-    Map(HashMap<K, Value<'b, K, Leaf>>),
-    OOrder(Order<'b>),
+enum AnyMap<K, V> {
+    Hash(HashMap<K, V>),
+    BTree(BTreeMap<K, V>),
 }
 
 
-fn build<K, L>(
+impl<K, V> AnyMap<K, V> {
+    fn get(&self, key: &K) -> Option<&V>
+    where
+        K: Eq + Hash + Ord,
+    {
+        match self {
+            AnyMap::Hash(m) => m.get(key),
+            AnyMap::BTree(m) => m.get(key),
+        }
+    }
+
+    fn contains_key(&self, key: &K) -> bool
+    where
+        K: Eq + Hash + Ord,
+    {
+        match self {
+            AnyMap::Hash(m) => m.contains_key(key),
+            AnyMap::BTree(m) => m.contains_key(key),
+        }
+    }
+
+    fn insert(&mut self, key: K, value: V)
+    where
+        K: Eq + Hash + Ord,
+    {
+        match self {
+            AnyMap::Hash(m) => { m.insert(key, value); }
+            AnyMap::BTree(m) => { m.insert(key, value); }
+        }
+    }
+
+    /// Iterate keys (returned as a boxed iterator to unify types)
+    fn keys<'a>(&'a self) -> Box<dyn Iterator<Item = &'a K> + 'a> {
+        match self {
+            AnyMap::Hash(m) => Box::new(m.keys()),
+            AnyMap::BTree(m) => Box::new(m.keys()),
+        }
+    }
+
+    /// Create an empty map of the same variant as `self`.
+    fn empty_like(&self) -> Self {
+        match self {
+            AnyMap::Hash(_) => AnyMap::Hash(HashMap::new()),
+            AnyMap::BTree(_) => AnyMap::BTree(BTreeMap::new()),
+        }
+    }
+}
+
+
+
+#[derive(Clone, Debug)]
+enum Value<K, Leaf> {
+    Leaf(Leaf),
+    Map(AnyMap<K, Value<K, Leaf>>),
+    OOrder(Order),
+}
+
+
+fn build<'b, K, L>(
     key: &K,
-    src: &HashMap<K, Value<K, L>>,
-    dst: &mut HashMap<K, Value<K, L>>,
+    src: &AnyMap<K, Value<K, L>>,
+    dst: &mut AnyMap<K, Value<K, L>>,
 )
 where
-    K: Eq + std::hash::Hash + Clone,
+    K: Eq + std::hash::Hash + Clone + Ord,
     L: Clone,
 {
     if dst.contains_key(key) {
@@ -102,7 +181,7 @@ where
                 dst.insert(key.clone(), Value::Leaf(l.clone()));
             }
             Value::Map(map) => {
-                let mut new_map = HashMap::new();
+                let mut new_map = map.empty_like();
                 for child_key in map.keys() {
                     build(child_key, map, &mut new_map);
                 }
@@ -110,12 +189,10 @@ where
             }
             Value::OOrder(ord) => {
                 
-            } 
+            }
         }
     }
 }
-
-
 
 
 async fn execute_in_cluster(name_method: &str, data_json: &str, peer: configs::Peer, conn: &conn_manager::ConnManager) -> Result<String>{

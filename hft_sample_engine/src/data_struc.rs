@@ -10,8 +10,8 @@ use serde_with::*;
 
 #[serde_as]
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct Order<'b> {
-    pub name: &'b str,
+pub struct Order {
+    pub name: String,
     pub order_id: i32,
     pub buy_sell: i8,
     pub price: f64,
@@ -19,16 +19,17 @@ pub struct Order<'b> {
 }
 
 #[serde_as]
-#[derive(Serialize, Deserialize, Debug)]
-pub struct PriceRanges <'b> {
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct PriceRanges {
 
-    #[serde_as(as = "HashMap<_, BTreeMap<_, _>>")]
+    //#[serde_as(as = "HashMap<_, BTreeMap<_, _>>")]
     // This tells Serde that data for Order<'b> may be borrowed from the input
-    #[serde(borrow)]
-    pub ranges: HashMap<String, BTreeMap<OrderedFloat<f64>,Order<'b>>>,
+    //#[serde(borrow)]
+    #[serde_as(as = "HashMap<_, BTreeMap<DisplayFromStr, _>>")]
+    pub ranges: HashMap<String, BTreeMap<OrderedFloat<f64>,Order>>,
 }
 
-impl <'b> PriceRanges <'b> {
+impl PriceRanges {
     pub fn new() -> Self {
         PriceRanges{ranges : HashMap::new(),}
     }
