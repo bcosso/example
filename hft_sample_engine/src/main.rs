@@ -1,3 +1,4 @@
+use actix_web::web::get;
 use data_struc::Order;
 use data_struc::PriceRanges;
 use rsocket_rust::Client;
@@ -54,7 +55,7 @@ async fn execute_program(){
         _ => { return (); }
     };
 
-    println!("{}", result);
+    //println!("{}", result);
 
     //let mut prices = data_struc::PriceRanges::new(); 
     
@@ -66,14 +67,14 @@ async fn execute_program(){
         _ => { return (); }
     };
 
-    println!("{}", result2);
+    //println!("{}", result2);
 
     //let mut prices = data_struc::PriceRanges::new(); 
     
     //let mut prices: data_struc::PriceRanges = serde_json::from_str(&result).unwrap(); 
     let security2: HashMap<String, data_struc::PriceRanges> = serde_json::from_str(&result2).unwrap();
     //serde_json::from_str(result)
-    println!("{:?}", security2);
+    //println!("{:?}", security2);
     
     
 let security_wrapped: HashMap<String, Value<String, data_struc::PriceRanges>> =
@@ -94,7 +95,7 @@ let security_wrapped2: HashMap<String, Value<String, data_struc::PriceRanges>> =
 
     build(&"AMZ".to_string() , &src, &mut dst);
 
-    
+    println!("{:?}", dst);
 }
 
 #[derive(Clone, Debug)]
@@ -115,6 +116,15 @@ impl<K, V> AnyMap<K, V> {
         }
     }
 
+    fn get_mut(&mut self, key: &K) -> Option<&mut V>
+    where
+        K: Eq + Hash + Ord,
+    {
+        match self {
+            AnyMap::Hash(m) => m.get_mut(key),
+            AnyMap::BTree(m) => m.get_mut(key),
+        }
+    }
     fn contains_key(&self, key: &K) -> bool
     where
         K: Eq + Hash + Ord,
@@ -158,7 +168,7 @@ impl<K, V> AnyMap<K, V> {
 enum Value<K, Leaf> {
     Leaf(Leaf),
     Map(AnyMap<K, Value<K, Leaf>>),
-    OOrder(Order),
+    //OOrder(Order),
 }
 
 
@@ -171,25 +181,43 @@ where
     K: Eq + std::hash::Hash + Clone + Ord,
     L: Clone,
 {
-    if dst.contains_key(key) {
-        return;
-    }
+    //if dst.contains_key(key) {
+    //    return;
+    //}
 
     if let Some(v) = src.get(key) {
         match v {
             Value::Leaf(l) => {
-                dst.insert(key.clone(), Value::Leaf(l.clone()));
+                if dst.contains_key(key){
+                    if let Some(val) = dst.get_mut(key) {
+                        *val = Value::Leaf(l.clone());
+                    }
+                }else{
+                    dst.insert(key.clone(), Value::Leaf(l.clone()));
+                }
             }
             Value::Map(map) => {
-                let mut new_map = map.empty_like();
-                for child_key in map.keys() {
-                    build(child_key, map, &mut new_map);
+                if dst.contains_key(key){
+
+                    if let Some(Value::Map(new_map)) = dst.get_mut(key){
+                        for child_key in map.keys() {
+
+                            //let mut value_map = Value::Map(new_map);
+                            build(child_key, map, new_map);
+                        }
+                        //dst.insert(key.clone(), Value::Map(new_map));
+                    }
+                }else{
+                    let mut new_map = map.empty_like();
+                    for child_key in map.keys() {
+                        build(child_key, map, &mut new_map);
+                    }
+                    dst.insert(key.clone(), Value::Map(new_map));
                 }
-                dst.insert(key.clone(), Value::Map(new_map));
             }
-            Value::OOrder(ord) => {
+            //Value::OOrder(ord) => {
                 
-            }
+            //}
         }
     }
 }
