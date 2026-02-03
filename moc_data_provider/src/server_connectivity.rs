@@ -191,6 +191,24 @@ impl PriceRanges {
         self.ranges.insert("20".to_string(), range2);
 
     }
+
+    pub fn update_price_ranges(&mut self){
+        let mut rnd = rand::rng();
+        let mut nums: Vec<i32> = (1..50).collect();
+        nums.shuffle(&mut rnd);
+
+
+        for range in self.ranges.values_mut(){
+            for order in range.values_mut(){
+               
+
+                    order.qty = 666;
+
+                    
+                
+            }
+        }
+    }
 }
 
 
