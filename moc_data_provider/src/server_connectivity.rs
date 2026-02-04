@@ -62,7 +62,13 @@ impl RSocket for RRResponder {
         if data.contains("execute_something"){
 
             if FILLED.load(Ordering::Acquire) {
-                let body = format!("echo: {}", data);
+                println!("YEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE");
+                let mut sec = SECURITIES.write().await;
+                //.update_price_ranges();
+                let price = &get_updated_price(&mut sec);
+
+                let body = format!("{:}", price);
+                
                 let resp = Payload::builder()
                 .set_data_utf8(&body)
                 // .set_metadata_utf8("optional-meta") // if you want metadata
@@ -151,7 +157,16 @@ pub fn get_price(security: &mut HashMap<String, PriceRanges>) -> String {
     println!("Result :: {:?}", st);
     return st.expect("REASON");
 }
-
+pub fn get_updated_price(security: &mut HashMap<String, PriceRanges>) -> String {
+    //let mut security: HashMap<String, PriceRanges> = HashMap::new();
+    for val in security.values_mut(){
+        val.update_price_ranges();
+        println!("YEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE");
+    }
+       let st = serde_json::to_string(&security);
+    println!("Result :: {:?}", st);
+    return st.expect("REASON");
+}
 impl PriceRanges {
     pub fn new() -> Self {
         PriceRanges{ranges : HashMap::new(),}
@@ -202,7 +217,7 @@ impl PriceRanges {
             for order in range.values_mut(){
                
 
-                    order.qty = 666;
+                    order.qty = order.qty + 1;
 
                     
                 
