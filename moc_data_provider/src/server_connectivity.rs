@@ -62,7 +62,7 @@ impl RSocket for RRResponder {
         if data.contains("execute_something"){
 
             if FILLED.load(Ordering::Acquire) {
-                println!("YEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE");
+
                 let mut sec = SECURITIES.write().await;
                 //.update_price_ranges();
                 let price = &get_updated_price(&mut sec);
@@ -161,7 +161,7 @@ pub fn get_updated_price(security: &mut HashMap<String, PriceRanges>) -> String 
     //let mut security: HashMap<String, PriceRanges> = HashMap::new();
     for val in security.values_mut(){
         val.update_price_ranges();
-        println!("YEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE");
+
     }
        let st = serde_json::to_string(&security);
     println!("Result :: {:?}", st);
@@ -179,7 +179,7 @@ impl PriceRanges {
         let mut count :i32;
         count = 1;
         let mut range: BTreeMap<OrderedFloat<f64>, Order> = BTreeMap::new();
-        while count < 15{
+        while count < 1000000{
             let mut nums: Vec<i32> = (1..50).collect();
             nums.shuffle(&mut rnd);
 
@@ -193,7 +193,7 @@ impl PriceRanges {
 
         count = 1;
         let mut range2: BTreeMap<OrderedFloat<f64>, Order> = BTreeMap::new();
-        while count < 15{
+        while count < 1000000{
 
             let mut nums: Vec<i32> = (1..100).collect();
             nums.shuffle(&mut rnd);
