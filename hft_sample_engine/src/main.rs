@@ -1,48 +1,76 @@
-use actix_web::web::get;
+use actix_web::{App, HttpResponse, HttpServer, post, web::{Json, Path, Data, get}};
+use actix_web::rt::time::delay_for;
 use data_struc::Order;
 use data_struc::PriceRanges;
 use rsocket_rust::Client;
 use tokio::runtime::Runtime;
+use tokio::time::{self, Duration, Instant};
 use rsocket_rust::prelude::*;
 use rsocket_rust::Result;
 use rsocket_rust_transport_tcp::TcpClientTransport;
+use std::{env, io};
 use std::collections::{HashMap, BTreeMap};
 use std::hash::Hash;
+
 
 mod conn_manager;
 mod configs;
 mod data_struc;
 
 
-
-fn main() {
+#[actix_rt::main]
+async fn main() -> io::Result<()> {
     
-    let rt = Runtime::new().unwrap();
-    rt.block_on(execute_program());
+    //let rt = Runtime::new().unwrap();
+    //rt.block_on(execute_program());
+    //
+    actix_web::rt::spawn(async {
+        println!("Task started on Tokio thread");
+        loop{
+            execute_program().await;
+            delay_for(Duration::from_secs(2)).await;
+        }
+        println!("Task finished");
+    });
 
 //    env::set_var("RUST_LOG", "actix_web=debug,actix_server=info");
 //    env_logger::init();
 //    let name = ConnectionManager::getName();
 
-//        HttpServer::new(|| {
+        HttpServer::new(|| {
 //            let counter : u8 = 0;
 //            let mutex_counter = Data::new(Mutex::new(counter));
 //            let peers = configs::read_config_file().unwrap();
 //            let conn = ConnectionManager::create_instance(peers);
 //            let mutex_connections = Data::new(Mutex::new(conn));
         
-//            App::new()
+            App::new()
 //                .app_data(Data::clone(&mutex_counter))
 //                .app_data(Data::clone(&mutex_connections))
 //                .wrap(middleware::Logger::default())
 //                .service(request_methods::get)
-//                .service(request_methods::execute_query)
-//                .service(request_methods::execute_query_method)
+                .service(request_range)
 
-//        })
-//    .bind("0.0.0.0:9090")?
-//    .run()
-//    .await
+        })
+    .bind("0.0.0.0:9090")?
+    .run()
+    .await
+}
+
+#[post("/request_range")]
+pub async fn request_range() -> HttpResponse {
+    let text_result: &str = "";
+    
+    match text_result {
+        "res" => HttpResponse::Ok()
+            .content_type("application/json")
+            .json(text_result),
+        "" => HttpResponse::NoContent()
+            .content_type("application/json")
+            .await
+            .unwrap(),
+        _ => panic!("Error")
+    }
 }
 
 async fn execute_program(){
@@ -76,7 +104,7 @@ async fn execute_program(){
     //serde_json::from_str(result)
     //println!("{:?}", security2);
     
-    
+    let start = Instant::now();    
 let security_wrapped: HashMap<String, Value<String, data_struc::PriceRanges>> =
     security
         .into_iter()
@@ -89,13 +117,15 @@ let security_wrapped2: HashMap<String, Value<String, data_struc::PriceRanges>> =
         .map(|(k, v)| (k, Value::Leaf(v)))
         .collect();
 
-    let src = AnyMap::Hash(security_wrapped);
-    let mut dst = AnyMap::Hash(security_wrapped2);
+    let src = AnyMap::Hash(security_wrapped2);
+    let mut dst = AnyMap::Hash(security_wrapped);
 
 
     build(&"AMZ".to_string() , &src, &mut dst);
+    let duration = start.elapsed();
 
     println!("{:?}", dst);
+    println!("Elapsed time: {:.2?}", duration);
 }
 
 #[derive(Clone, Debug)]
@@ -243,6 +273,7 @@ async fn execute_in_cluster(name_method: &str, data_json: &str, peer: configs::P
         let res = cli.request_response(req).await?;
 
         println!("GOT A RESPONSE!");
+        println!("{:?}", res);
 
         let result1 = match res{
             Some(resp) => resp,
