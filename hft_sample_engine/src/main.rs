@@ -1,5 +1,5 @@
 use actix_web::{App, HttpResponse, HttpServer, post, web::{Json, Path, Data, get}};
-use actix_web::rt::time::delay_for;
+
 use data_struc::Order;
 use data_struc::PriceRanges;
 use rsocket_rust::Client;
@@ -24,11 +24,11 @@ async fn main() -> io::Result<()> {
     //let rt = Runtime::new().unwrap();
     //rt.block_on(execute_program());
     //
-    actix_web::rt::spawn(async {
+    tokio::spawn(async {
         println!("Task started on Tokio thread");
         loop{
             execute_program().await;
-            delay_for(Duration::from_secs(2)).await;
+            tokio::time::sleep(Duration::from_secs(2)).await;
         }
         println!("Task finished");
     });
@@ -43,7 +43,8 @@ async fn main() -> io::Result<()> {
 //            let peers = configs::read_config_file().unwrap();
 //            let conn = ConnectionManager::create_instance(peers);
 //            let mutex_connections = Data::new(Mutex::new(conn));
-        
+
+                   
             App::new()
 //                .app_data(Data::clone(&mutex_counter))
 //                .app_data(Data::clone(&mutex_connections))
