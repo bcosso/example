@@ -38,7 +38,7 @@ async fn main() -> io::Result<()> {
         initialize_sec().await;
         print!("Tttttttttttttttttttttt{:?}", SECURITIES);
         loop{
-            //execute_program().await;
+            execute_program().await;
             tokio::time::sleep(Duration::from_secs(2)).await;
         }
         println!("Task finished");
@@ -94,17 +94,17 @@ async fn execute_program(){
     let mut peers = configs::read_config_file().unwrap();
     let connec = conn_manager::create_instance(peers.clone()).await.unwrap();
    
-    let result = match execute_in_cluster("execute_something", "{}", peers[0].clone(), &connec).await{
-        Ok(data) => data,
-        _ => { return (); }
-    };
+//    let result = match execute_in_cluster("execute_something", "{}", peers[0].clone(), &connec).await{
+//        Ok(data) => data,
+//        _ => { return (); }
+//    };
 
     //println!("{}", result);
 
     //let mut prices = data_struc::PriceRanges::new(); 
     
     //let mut prices: data_struc::PriceRanges = serde_json::from_str(&result)?; 
-    let mut security: HashMap<String, data_struc::PriceRanges> = serde_json::from_str(&result).unwrap(); 
+//    let mut security: HashMap<String, data_struc::PriceRanges> = serde_json::from_str(&result).unwrap(); 
    
     let result2 = match execute_in_cluster("execute_something", "{}", peers[0].clone(), &connec).await{
         Ok(data) => data,
@@ -121,11 +121,11 @@ async fn execute_program(){
     //println!("{:?}", security2);
     
     let start = Instant::now();    
-let security_wrapped: HashMap<String, Value<String, data_struc::PriceRanges>> =
-    security
-        .into_iter()
-        .map(|(k, v)| (k, Value::Leaf(v)))
-        .collect();
+//let security_wrapped: HashMap<String, Value<String, data_struc::PriceRanges>> =
+//    security
+//        .into_iter()
+//        .map(|(k, v)| (k, Value::Leaf(v)))
+//        .collect();
 
 let security_wrapped2: HashMap<String, Value<String, data_struc::PriceRanges>> =
     security2
@@ -134,7 +134,7 @@ let security_wrapped2: HashMap<String, Value<String, data_struc::PriceRanges>> =
         .collect();
 
     let src = AnyMap::Hash(security_wrapped2);
-    let mut dst = AnyMap::Hash(security_wrapped);
+    //let mut dst = AnyMap::Hash(security_wrapped);
 
     //let mut sec = SECURITIES.write().await;
 
@@ -143,10 +143,40 @@ let security_wrapped2: HashMap<String, Value<String, data_struc::PriceRanges>> =
     
     //let mut any_map = AnyMap::Hash(map);
 
-    build(&"AMZ".to_string() , &src, &mut dst);
+    let mut guard = SECURITIES.write().await;
+
+ 
+
+    // 1) Move contents out; guard’s map becomes empty but keeps allocation
+
+    let mut owned_map: HashMap<String, Value<String, PriceRanges>> = std::mem::take(&mut *guard);
+
+ 
+
+    // 2) Wrap as your existing owned AnyMap and run user code:
+
+    let mut any = AnyMap::Hash(owned_map);
+
+    build(&"AMZ".to_string() , &src, &mut any);
+
+ 
+
+    // 3) Unwrap and return contents to the guard before releasing the lock
+
+    owned_map = match any {
+
+        AnyMap::Hash(m) => m,
+
+        AnyMap::BTree(_) => unreachable!("Unexpected variant here"),
+
+       
+    };
+    *guard = owned_map;
+    
+    //build(&"AMZ".to_string() , &src, &mut dst);
     let duration = start.elapsed();
 
-    println!("{:?}", dst);
+    //println!("{:?}", dst);
     println!("Elapsed time: {:.2?}", duration);
 }
 

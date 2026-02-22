@@ -34,3 +34,9 @@ impl PriceRanges {
         PriceRanges{ranges : HashMap::new(),}
     }
 }
+
+#[derive(Serialize, Deserialize,Debug)]
+pub struct PostQuery {
+    method: String,
+    query: String
+}
