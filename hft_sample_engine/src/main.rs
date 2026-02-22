@@ -17,6 +17,15 @@ mod conn_manager;
 mod configs;
 mod data_struc;
 
+use once_cell::sync::Lazy;
+use std::sync::{Arc, atomic::AtomicBool, atomic::Ordering};
+use tokio::sync::RwLock;
+
+pub static SECURITIES: Lazy<Arc<RwLock<HashMap<String, Value<String, PriceRanges>>>>> =
+    Lazy::new(|| Arc::new(RwLock::new(HashMap::new())));
+
+pub static FILLED: Lazy<AtomicBool> =
+    Lazy::new(|| AtomicBool::new(false));
 
 #[actix_rt::main]
 async fn main() -> io::Result<()> {
@@ -26,8 +35,10 @@ async fn main() -> io::Result<()> {
     //
     tokio::spawn(async {
         println!("Task started on Tokio thread");
+        initialize_sec().await;
+        print!("Tttttttttttttttttttttt{:?}", SECURITIES);
         loop{
-            execute_program().await;
+            //execute_program().await;
             tokio::time::sleep(Duration::from_secs(2)).await;
         }
         println!("Task finished");
@@ -58,9 +69,13 @@ async fn main() -> io::Result<()> {
     .await
 }
 
+
+
+
 #[post("/request_range")]
-pub async fn request_range() -> HttpResponse {
+pub async fn request_range(post_data: Json<data_struc::PostQuery>) -> HttpResponse {
     let text_result: &str = "";
+
     
     match text_result {
         "res" => HttpResponse::Ok()
@@ -121,12 +136,55 @@ let security_wrapped2: HashMap<String, Value<String, data_struc::PriceRanges>> =
     let src = AnyMap::Hash(security_wrapped2);
     let mut dst = AnyMap::Hash(security_wrapped);
 
+    //let mut sec = SECURITIES.write().await;
+
+
+    //let map: &mut HashMap<String, Value<String, data_struc::PriceRanges>> = &mut *sec;
+    
+    //let mut any_map = AnyMap::Hash(map);
 
     build(&"AMZ".to_string() , &src, &mut dst);
     let duration = start.elapsed();
 
     println!("{:?}", dst);
     println!("Elapsed time: {:.2?}", duration);
+}
+
+async fn initialize_sec(){
+    let mut peers = configs::read_config_file().unwrap();
+    let connec = conn_manager::create_instance(peers.clone()).await.unwrap();
+
+
+    let result = match execute_in_cluster("execute_something", "{}", peers[0].clone(), &connec).await{
+        Ok(data) => data,
+        _ => { return (); }
+    };
+
+
+    let mut security: HashMap<String, data_struc::PriceRanges> = serde_json::from_str(&result).unwrap();
+
+    let mut sec = SECURITIES.write().await;
+
+
+    let map: &mut HashMap<String, Value<String, data_struc::PriceRanges>> = &mut *sec;
+    
+    let security_wrapped: HashMap<String, Value<String, data_struc::PriceRanges>> =
+    security
+        .into_iter()
+        .map(|(k, v)| (k, Value::Leaf(v)))
+        .collect();
+
+    let hash_wrapped = AnyMap::Hash(security_wrapped);
+
+    for key in hash_wrapped.keys(){
+        if let Some(new_map) = hash_wrapped.get(key){
+            map.insert(key.clone(), new_map.clone());
+        }
+    }
+}
+
+fn add_sec(security: &mut HashMap<String, PriceRanges>, security_from: &mut HashMap<String, PriceRanges>) {
+    *security = security_from.clone();
 }
 
 #[derive(Clone, Debug)]
