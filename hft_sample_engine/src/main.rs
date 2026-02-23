@@ -143,35 +143,19 @@ let security_wrapped2: HashMap<String, Value<String, data_struc::PriceRanges>> =
     
     //let mut any_map = AnyMap::Hash(map);
 
-    let mut guard = SECURITIES.write().await;
-
- 
-
-    // 1) Move contents out; guard’s map becomes empty but keeps allocation
-
-    let mut owned_map: HashMap<String, Value<String, PriceRanges>> = std::mem::take(&mut *guard);
-
- 
-
-    // 2) Wrap as your existing owned AnyMap and run user code:
+    let mut sec = SECURITIES.write().await;
+   
+    let mut owned_map: HashMap<String, Value<String, PriceRanges>> = std::mem::take(&mut *sec);
 
     let mut any = AnyMap::Hash(owned_map);
 
     build(&"AMZ".to_string() , &src, &mut any);
-
- 
-
-    // 3) Unwrap and return contents to the guard before releasing the lock
-
     owned_map = match any {
-
         AnyMap::Hash(m) => m,
-
-        AnyMap::BTree(_) => unreachable!("Unexpected variant here"),
-
-       
+        AnyMap::BTree(_) => unreachable!("Error unextepcted BTree"),
+     
     };
-    *guard = owned_map;
+    *sec = owned_map;
     
     //build(&"AMZ".to_string() , &src, &mut dst);
     let duration = start.elapsed();
