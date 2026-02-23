@@ -3,6 +3,7 @@ use actix_web::{App, HttpResponse, HttpServer, post, web::{Json, Path, Data, get
 use data_struc::Order;
 use data_struc::PriceRanges;
 use rsocket_rust::Client;
+use serde_json::to_string;
 use tokio::runtime::Runtime;
 use tokio::time::{self, Duration, Instant};
 use rsocket_rust::prelude::*;
@@ -11,6 +12,7 @@ use rsocket_rust_transport_tcp::TcpClientTransport;
 use std::{env, io};
 use std::collections::{HashMap, BTreeMap};
 use std::hash::Hash;
+use std::fmt::Write;
 
 
 mod conn_manager;
@@ -74,18 +76,35 @@ async fn main() -> io::Result<()> {
 
 #[post("/request_range")]
 pub async fn request_range(post_data: Json<data_struc::PostQuery>) -> HttpResponse {
-    let text_result: &str = "";
+    let mut text_result: &str = "";
 
-    
-    match text_result {
-        "res" => HttpResponse::Ok()
+
+    let mut sec = SECURITIES.write().await;
+    let map: &mut HashMap<String, Value<String, data_struc::PriceRanges>> = &mut *sec;
+    //text_result = map["AMZ"][22]
+    if let Some(value_internal) = map.get("AMZ"){
+        //let conv_1 = Value::Map(value_internal);
+    if let Value::Map(value_response) = value_internal {
+        let mut index = String::new();
+        index = "22".to_string();
+        let txt = value_response.get(&index).unwrap();
+        let mut str_result = String::new();
+    write!(str_result, "{:?}", txt);
+
+HttpResponse::Ok()
             .content_type("application/json")
-            .json(text_result),
-        "" => HttpResponse::NoContent()
+            .json(str_result)
+        }else{
+        HttpResponse::NoContent()
             .content_type("application/json")
             .await
-            .unwrap(),
-        _ => panic!("Error")
+            .unwrap()
+    }
+    }else{
+        HttpResponse::NoContent()
+            .content_type("application/json")
+            .await
+            .unwrap()
     }
 }
 
@@ -134,19 +153,8 @@ let security_wrapped2: HashMap<String, Value<String, data_struc::PriceRanges>> =
         .collect();
 
     let src = AnyMap::Hash(security_wrapped2);
-    //let mut dst = AnyMap::Hash(security_wrapped);
-
-    //let mut sec = SECURITIES.write().await;
-
-
-    //let map: &mut HashMap<String, Value<String, data_struc::PriceRanges>> = &mut *sec;
-    
-    //let mut any_map = AnyMap::Hash(map);
-
     let mut sec = SECURITIES.write().await;
-   
     let mut owned_map: HashMap<String, Value<String, PriceRanges>> = std::mem::take(&mut *sec);
-
     let mut any = AnyMap::Hash(owned_map);
 
     build(&"AMZ".to_string() , &src, &mut any);
@@ -167,19 +175,13 @@ let security_wrapped2: HashMap<String, Value<String, data_struc::PriceRanges>> =
 async fn initialize_sec(){
     let mut peers = configs::read_config_file().unwrap();
     let connec = conn_manager::create_instance(peers.clone()).await.unwrap();
-
-
     let result = match execute_in_cluster("execute_something", "{}", peers[0].clone(), &connec).await{
         Ok(data) => data,
         _ => { return (); }
     };
 
-
     let mut security: HashMap<String, data_struc::PriceRanges> = serde_json::from_str(&result).unwrap();
-
     let mut sec = SECURITIES.write().await;
-
-
     let map: &mut HashMap<String, Value<String, data_struc::PriceRanges>> = &mut *sec;
     
     let security_wrapped: HashMap<String, Value<String, data_struc::PriceRanges>> =
@@ -197,9 +199,6 @@ async fn initialize_sec(){
     }
 }
 
-fn add_sec(security: &mut HashMap<String, PriceRanges>, security_from: &mut HashMap<String, PriceRanges>) {
-    *security = security_from.clone();
-}
 
 #[derive(Clone, Debug)]
 enum AnyMap<K, V> {
@@ -248,7 +247,7 @@ impl<K, V> AnyMap<K, V> {
         }
     }
 
-    /// Iterate keys (returned as a boxed iterator to unify types)
+
     fn keys<'a>(&'a self) -> Box<dyn Iterator<Item = &'a K> + 'a> {
         match self {
             AnyMap::Hash(m) => Box::new(m.keys()),
@@ -256,7 +255,7 @@ impl<K, V> AnyMap<K, V> {
         }
     }
 
-    /// Create an empty map of the same variant as `self`.
+
     fn empty_like(&self) -> Self {
         match self {
             AnyMap::Hash(_) => AnyMap::Hash(HashMap::new()),
