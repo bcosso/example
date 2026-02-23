@@ -13,7 +13,7 @@ use std::{env, io};
 use std::collections::{HashMap, BTreeMap};
 use std::hash::Hash;
 use std::fmt::Write;
-
+use ordered_float::OrderedFloat;
 
 mod conn_manager;
 mod configs;
@@ -84,22 +84,34 @@ pub async fn request_range(post_data: Json<data_struc::PostQuery>) -> HttpRespon
     //text_result = map["AMZ"][22]
     if let Some(value_internal) = map.get("AMZ"){
         //let conv_1 = Value::Map(value_internal);
-    if let Value::Map(value_response) = value_internal {
-        let mut index = String::new();
-        index = "22".to_string();
-        let txt = value_response.get(&index).unwrap();
-        let mut str_result = String::new();
-    write!(str_result, "{:?}", txt);
+        if let Value::Map(value_response) = value_internal {
+            let mut index = String::new();
+            index = "22".to_string();
+            let txt = value_response.get(&index).unwrap();
+            let mut str_result = String::new();
+            write!(str_result, "{:?}", txt);
 
-HttpResponse::Ok()
-            .content_type("application/json")
-            .json(str_result)
+            HttpResponse::Ok()
+                .content_type("application/json")
+                .json(str_result)
+        }else if  let Value::Leaf(value_response) = value_internal{
+
+            //let mut index = String::new();
+            //index = "22".to_string();
+            //let txt = value_response.get(&index).unwrap();
+            let mut str_result = String::new();
+            let internal_map: HashMap<String, BTreeMap<OrderedFloat<f64>,Order>> = value_response.ranges.clone();
+            write!(str_result, "{:?}", internal_map);
+
+            HttpResponse::Ok()
+                .content_type("application/json")
+                .json(str_result)
         }else{
-        HttpResponse::NoContent()
-            .content_type("application/json")
-            .await
-            .unwrap()
-    }
+            HttpResponse::NoContent()
+                .content_type("application/json")
+                .await
+                .unwrap()
+        }
     }else{
         HttpResponse::NoContent()
             .content_type("application/json")
