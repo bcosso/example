@@ -43,6 +43,10 @@ static HNSW_INDEX: Lazy<Arc<RwLock<Hnsw<f32, DistL2>>>> = Lazy::new(|| {
     Arc::new(RwLock::new(hnsw))
 });
 
+pub static ANSWERS: Lazy<Arc<RwLock<HashMap<String, String>>>> =
+    Lazy::new(|| Arc::new(RwLock::new(HashMap::new())));
+
+
 pub static SECURITIES: Lazy<Arc<RwLock<HashMap<String, Value<String, PriceRanges>>>>> =
     Lazy::new(|| Arc::new(RwLock::new(HashMap::new())));
 
@@ -156,11 +160,25 @@ pub async fn request_search(post_data: Json<data_struc::PostQuery>) -> HttpRespo
     let mut cli = reqwest::Client::new();
     
     //{'model':'llama3.2', 'input': 'what is the derivative of x ^ 2? ', 'stream':False}
-    let query = format!("{{\"model\":\"llama3.2\", \"input\": {:?}, \"stream\":false}}", post_data.query.clone());
+    let mut query = format!("{{\"model\":\"llama3.2\", \"input\": {:?}, \"stream\":false}}", post_data.query.clone());
     let result_response = cli.post("http://127.0.0.1:11434/api/embed").body(reqwest::Body::from(query.clone())).send().await; 
     if let Ok(text_response) = result_response.unwrap().text().await{
         println!("{:?}",text_response);
-        check_previous_searches(text_response);
+        
+        let payload: EmbeddingResponse = serde_json::from_str(&text_response).expect("Not satisfied");
+        println!("Model: {}", payload.model);
+
+        let vectors: Vec<Vec<f32>> = payload.embeddings;
+        if let Ok(check_cache) = check_previous_searches_main(vectors[0].clone()).await{
+            if check_cache == "" {
+                query = format!("{{\"model\":\"llama3.2\", \"prompt\": {:?}, \"stream\":false}}", post_data.query.clone());
+                let result_response_search = cli.post("http://127.0.0.1:11434/api/whatever").body(reqwest::Body::from(query.clone())).send().await;
+                //insert into cache (HNSW_INDEX and ANSWERS)
+            }else{
+            }
+
+
+        }
 
     }
     //    println!("OK");
@@ -233,7 +251,7 @@ fn check_previous_searches(search_text : String) -> Result<()> {
 }
 
 
-async fn check_previous_searches_main(search_text : String) -> Result<()> {
+async fn check_previous_searches_main(search_text : Vec<f32>) -> Result<String> {
 
     // Search for the nearest neighbors of a query vector.
     //let query = vectors[0].clone(); // for demo: search the first vector
@@ -241,8 +259,6 @@ let json = std::fs::read_to_string("emb.json")?;
     let payload: EmbeddingResponse = serde_json::from_str(&json)?;
     println!("Model: {}", payload.model);
 
-    // ---- 2) Data: "array of vectors" ----
-    // This is exactly the shape you provided: Vec<Vec<f32>>.
     let vectors: Vec<Vec<f32>> = payload.embeddings;
 
     let k = 5;
@@ -251,7 +267,7 @@ let json = std::fs::read_to_string("emb.json")?;
     let mut searches = HNSW_INDEX.write().await;
     //let hnsw: Hnsw<f32, DistL2> = Hnsw::new(
     
-    let mut owned_map: Hnsw<f32, DistL2> = std::mem::take(&mut *searches);
+    //let mut owned_map: Hnsw<f32, DistL2> = std::mem::take(&mut *searches);
     let query = vectors[0].clone();
     //let mut any = AnyMap::Hash(owned_map);
 
@@ -262,16 +278,28 @@ let json = std::fs::read_to_string("emb.json")?;
      
     //*sec = owned_map;
 
-    let results = owned_map.search(query.as_slice(), k, ef_search); // [1](https://github.com/jean-pierreBoth/hnswlib-rs/blob/master/src/hnsw.rs)
+    //let results = searches.search(query.as_slice(), k, ef_search); // [1](https://github.com/jean-pierreBoth/hnswlib-rs/blob/master/src/hnsw.rs)
+    let results = searches.search(&search_text, k, ef_search);
 
-    *searches = owned_map; 
+    //*searches = owned_map; 
     println!("Top-{k} neighbors:");
     for n in results {
-        // Common fields are: n.d_id (external id) and n.distance.
+       if n.distance < 0.3 {
+            //return answer, should be in the global
+            let mut answer = ANSWERS.read().await;
+            
+            if let Some(result) = answer.get(&(n.distance.to_string())){
+                return Ok(result.to_string());
+            }
+
+        }else{
+            //should only check the first that fits, if it doesn't, break
+            break;
+        }
         println!("  id={}  dist={:.6}", n.d_id, n.distance);
     }
 
-    Ok(())
+    Ok("".to_string())
 }
 
 async fn execute_program(){
