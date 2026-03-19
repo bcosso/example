@@ -1,4 +1,4 @@
-use actix_web::{App, HttpResponse, HttpServer, post, web::{Json, Path, Data, get}};
+use actix_web::{cookie::time::Error, post, web::{get, Data, Json, Path}, App, HttpResponse, HttpServer};
 
 use data_struc::Order;
 use data_struc::PriceRanges;
@@ -13,11 +13,12 @@ use std::{env, io};
 use std::collections::{HashMap, BTreeMap};
 use std::hash::Hash;
 use std::fmt::Write;
+use std::result::Result as OtherResult;
 use ordered_float::OrderedFloat;
 use http::{Request, Response};
 use reqwest;
 use hnsw_rs::prelude::*; // Hnsw, DistL2, etc.
-use serde::Deserialize;
+use serde::{de::Error as OtherError, Deserialize};
 
 
 mod conn_manager;
@@ -27,6 +28,22 @@ mod data_struc;
 use once_cell::sync::Lazy;
 use std::sync::{Arc, atomic::AtomicBool, atomic::Ordering};
 use tokio::sync::RwLock;
+
+
+use thiserror::Error;
+
+#[derive(Error, Debug)]
+pub enum SearchError {
+    #[error("No matching previous search found")]
+    NotFound,
+
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
+
+    #[error("JSON parse error: {0}")]
+    Json(#[from] serde_json::Error),
+}
+
 
 // The singleton holding the Arc
 static HNSW_INDEX: Lazy<Arc<RwLock<Hnsw<f32, DistL2>>>> = Lazy::new(|| {
@@ -43,7 +60,7 @@ static HNSW_INDEX: Lazy<Arc<RwLock<Hnsw<f32, DistL2>>>> = Lazy::new(|| {
     Arc::new(RwLock::new(hnsw))
 });
 
-pub static ANSWERS: Lazy<Arc<RwLock<HashMap<String, String>>>> =
+pub static ANSWERS: Lazy<Arc<RwLock<HashMap<String, Vec<f32>>>>> =
     Lazy::new(|| Arc::new(RwLock::new(HashMap::new())));
 
 
@@ -169,16 +186,22 @@ pub async fn request_search(post_data: Json<data_struc::PostQuery>) -> HttpRespo
         println!("Model: {}", payload.model);
 
         let vectors: Vec<Vec<f32>> = payload.embeddings;
-        if let Ok(check_cache) = check_previous_searches_main(vectors[0].clone()).await{
-            if check_cache == "" {
+            match check_previous_searches_main(vectors[0].clone()).await{
+            
+                Err(e) => {
+                
+            
                 query = format!("{{\"model\":\"llama3.2\", \"prompt\": {:?}, \"stream\":false}}", post_data.query.clone());
                 let result_response_search = cli.post("http://127.0.0.1:11434/api/whatever").body(reqwest::Body::from(query.clone())).send().await;
                 //insert into cache (HNSW_INDEX and ANSWERS)
-            }else{
+                let answer = result_response_search.unwrap().text().await;
+                add_new_vector(vectors[0].clone(), answer.expect("REASON"));
+
+                },
+            Ok(vec_answer) => {}
+
+
             }
-
-
-        }
 
     }
     //    println!("OK");
@@ -197,6 +220,16 @@ pub async fn request_search(post_data: Json<data_struc::PostQuery>) -> HttpRespo
 struct EmbeddingResponse {
     model: String,
     embeddings: Vec<Vec<f32>>,
+}
+
+async fn add_new_vector(vec: Vec<f32>, answer: String){
+    let mut hnsw_list = HNSW_INDEX.write().await;
+    let mut index_vector: usize = hnsw_list.get_nb_point();
+    hnsw_list.insert_slice((vec.as_slice(), index_vector));
+    let mut answers_write = ANSWERS.write().await;
+    answers_write.insert(index_vector.to_string(), vec);
+
+
 }
 
 fn check_previous_searches(search_text : String) -> Result<()> {
@@ -251,7 +284,7 @@ fn check_previous_searches(search_text : String) -> Result<()> {
 }
 
 
-async fn check_previous_searches_main(search_text : Vec<f32>) -> Result<String> {
+async fn check_previous_searches_main(search_text : Vec<f32>) -> OtherResult<Vec<f32>, SearchError> {
 
     // Search for the nearest neighbors of a query vector.
     //let query = vectors[0].clone(); // for demo: search the first vector
@@ -289,7 +322,7 @@ let json = std::fs::read_to_string("emb.json")?;
             let mut answer = ANSWERS.read().await;
             
             if let Some(result) = answer.get(&(n.distance.to_string())){
-                return Ok(result.to_string());
+                return Ok(result.clone());
             }
 
         }else{
@@ -299,7 +332,7 @@ let json = std::fs::read_to_string("emb.json")?;
         println!("  id={}  dist={:.6}", n.d_id, n.distance);
     }
 
-    Ok("".to_string())
+    Err(SearchError::NotFound.into())
 }
 
 async fn execute_program(){
