@@ -103,31 +103,29 @@ pub async fn request_search(post_data: Json<data_struc::PostQuery>) -> HttpRespo
         println!("Model: {}", payload.model);
 
         let vectors: Vec<Vec<f32>> = payload.embeddings;
-            match check_previous_searches_main(vectors[0].clone()).await{
+        match check_previous_searches_main(vectors[0].clone()).await{
+        
+            Ok(answer_is_inmem) => {
             
-                Ok(answer_is_inmem) => {
-                
-                    if answer_is_inmem == ""{
-                        query = format!("{{\"model\":\"llama3.2\", \"prompt\": {:?}, \"stream\":false}}", post_data.query.clone());
-                        let result_response_search = cli.post("http://127.0.0.1:11434/api/whatever").body(reqwest::Body::from(query.clone())).send().await;
-                        //insert into cache (HNSW_INDEX and ANSWERS)
-                        let answer = result_response_search.unwrap().text().await;
-                        let answer_cloned = answer.expect("REASON").clone();
-                        add_new_vector(vectors[0].clone(), answer_cloned.clone());
-                        return HttpResponse::Ok()
+                if answer_is_inmem == ""{
+                    query = format!("{{\"model\":\"llama3.2\", \"prompt\": {:?}, \"stream\":false}}", post_data.query.clone());
+                    let result_response_search = cli.post("http://127.0.0.1:11434/api/whatever").body(reqwest::Body::from(query.clone())).send().await;
+                    //insert into cache (HNSW_INDEX and ANSWERS)
+                    let answer = result_response_search.unwrap().text().await;
+                    let answer_cloned = answer.expect("REASON").clone();
+                    add_new_vector(vectors[0].clone(), answer_cloned.clone());
+                    return HttpResponse::Ok()
                         .content_type("application/json")
-                        // .json((*lock_result).to_string())
-                        .json(answer_cloned.clone());
-                    }else{
-                        return HttpResponse::Ok()
+                       .json(answer_cloned.clone());
+                }else{
+                    return HttpResponse::Ok()
                         .content_type("application/json")
-                        // .json((*lock_result).to_string())
-                        .json(answer_is_inmem);
-                    }
+                       .json(answer_is_inmem);
+                }
 
-                },
-                Err(_) => {}
-           }
+            },
+            Err(_) => {}
+       }
     }
    
     HttpResponse::NoContent().content_type("application/json")
@@ -148,8 +146,6 @@ async fn add_new_vector(vec: Vec<f32>, answer: String){
     hnsw_list.insert_slice((vec.as_slice(), index_vector));
     let mut answers_write = ANSWERS.write().await;
     answers_write.insert(index_vector.to_string(), answer);
-
-
 }
 
 fn check_previous_searches(search_text : String) -> Result<()> {
