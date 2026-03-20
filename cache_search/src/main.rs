@@ -19,18 +19,20 @@ use http::{Request, Response};
 use reqwest;
 use hnsw_rs::prelude::*; // Hnsw, DistL2, etc.
 use serde::{de::Error as OtherError, Deserialize};
-
+use once_cell::sync::Lazy;
+use std::sync::{Arc, atomic::AtomicBool, atomic::Ordering};
+use tokio::sync::RwLock;
+use thiserror::Error;
 
 mod conn_manager;
 mod configs;
 mod data_struc;
 
-use once_cell::sync::Lazy;
-use std::sync::{Arc, atomic::AtomicBool, atomic::Ordering};
-use tokio::sync::RwLock;
-
-
-use thiserror::Error;
+#[derive(Debug, Deserialize)]
+struct EmbeddingResponse {
+    model: String,
+    embeddings: Vec<Vec<f32>>,
+}
 
 #[derive(Error, Debug)]
 pub enum SearchError {
@@ -61,13 +63,8 @@ static HNSW_INDEX: Lazy<Arc<RwLock<Hnsw<f32, DistL2>>>> = Lazy::new(|| {
 pub static ANSWERS: Lazy<Arc<RwLock<HashMap<String, String>>>> =
     Lazy::new(|| Arc::new(RwLock::new(HashMap::new())));
 
-
-
 #[actix_rt::main]
 async fn main() -> io::Result<()> {
-    
-
-
         HttpServer::new(|| {
 //            let counter : u8 = 0;
 //            let mutex_counter = Data::new(Mutex::new(counter));
@@ -134,11 +131,7 @@ pub async fn request_search(post_data: Json<data_struc::PostQuery>) -> HttpRespo
 
 }
 
-#[derive(Debug, Deserialize)]
-struct EmbeddingResponse {
-    model: String,
-    embeddings: Vec<Vec<f32>>,
-}
+
 
 async fn add_new_vector(vec: Vec<f32>, answer: String){
     let mut hnsw_list = HNSW_INDEX.write().await;
