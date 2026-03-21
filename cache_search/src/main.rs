@@ -217,16 +217,16 @@ async fn check_previous_searches_main(search_text : Vec<f32>) -> Result<String> 
     //*sec = owned_map;
 
     //let results = searches.search(query.as_slice(), k, ef_search); 
-    let results = searches.search(&search_text, k, ef_search);
-
+    let mut results = searches.search(&search_text, k, ef_search);
+    results.sort_by(|a, b| a.distance.partial_cmp(&b.distance).unwrap_or(std::cmp::Ordering::Equal));
     //*searches = owned_map; 
     println!("Top-{k} neighbors:");
     for n in results {
-       if n.distance < 0.1 {
+       if n.distance < 0.3 {
             //return answer, should be in the global
             let mut answer = ANSWERS.read().await;
             
-            if let Some(result) = answer.get(&(n.distance.to_string())){
+            if let Some(result) = answer.get(&(n.d_id.to_string())){
                 return Ok(result.clone());
             }
 
