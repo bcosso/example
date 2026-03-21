@@ -48,14 +48,15 @@ pub enum SearchError {
 
 
 static HNSW_INDEX: Lazy<Arc<RwLock<Hnsw<f32, DistL2>>>> = Lazy::new(|| {
-    let json = std::fs::read_to_string("emb.json").expect("Failed to read emb.json");
-    let payload: EmbeddingResponse = serde_json::from_str(&json).expect("Failed to parse JSON");
+    //let json = std::fs::read_to_string("emb.json").expect("Failed to read emb.json");
+    //let payload: EmbeddingResponse = serde_json::from_str(&json).expect("Failed to parse JSON");
     
-    let mut hnsw = Hnsw::new(16, payload.embeddings.len(), 16, 200, DistL2::default());
+    //let mut hnsw = Hnsw::new(16, payload.embeddings.len(), 16, 200, DistL2::default());
+    let mut hnsw = Hnsw::new(16, 3, 16, 200, DistL2::default());
 
-    for (i, vec) in payload.embeddings.into_iter().enumerate() {
-        hnsw.insert_slice((vec.as_slice(), i));
-    }
+    //for (i, vec) in payload.embeddings.into_iter().enumerate() {
+    //    hnsw.insert_slice((vec.as_slice(), i));
+    //}
 
     Arc::new(RwLock::new(hnsw))
 });
@@ -94,10 +95,10 @@ pub async fn request_search(post_data: Json<data_struc::PostQuery>) -> HttpRespo
     let mut query = format!("{{\"model\":\"llama3.2\", \"input\": {:?}, \"stream\":false}}", post_data.query.clone());
     let result_response = cli.post("http://127.0.0.1:11434/api/embed").body(reqwest::Body::from(query.clone())).send().await; 
     if let Ok(text_response) = result_response.unwrap().text().await{
-        println!("{:?}",text_response);
+        //println!("{:?}",text_response);
         
         let payload: EmbeddingResponse = serde_json::from_str(&text_response).expect("Not satisfied");
-        println!("Model: {}", payload.model);
+        //println!("Model: {}", payload.model);
 
         let vectors: Vec<Vec<f32>> = payload.embeddings;
         match check_previous_searches_main(vectors[0].clone()).await{
@@ -105,23 +106,30 @@ pub async fn request_search(post_data: Json<data_struc::PostQuery>) -> HttpRespo
             Ok(answer_is_inmem) => {
             
                 if answer_is_inmem == ""{
+                    print!("answer not in mem");
                     query = format!("{{\"model\":\"llama3.2\", \"prompt\": {:?}, \"stream\":false}}", post_data.query.clone());
-                    let result_response_search = cli.post("http://127.0.0.1:11434/api/whatever").body(reqwest::Body::from(query.clone())).send().await;
+                    let result_response_search = cli.post("http://127.0.0.1:11434/api/generate").body(reqwest::Body::from(query.clone())).send().await;
                     //insert into cache (HNSW_INDEX and ANSWERS)
                     let answer = result_response_search.unwrap().text().await;
                     let answer_cloned = answer.expect("REASON").clone();
-                    add_new_vector(vectors[0].clone(), answer_cloned.clone());
+                    add_new_vector(vectors[0].clone(), answer_cloned.clone()).await;
                     return HttpResponse::Ok()
                         .content_type("application/json")
                        .json(answer_cloned.clone());
                 }else{
+                    print!("ta fodido");
                     return HttpResponse::Ok()
                         .content_type("application/json")
                        .json(answer_is_inmem);
                 }
 
             },
-            Err(_) => {}
+            Err(_) => {
+                print!("Erro caralho");
+                return HttpResponse::Ok()
+                        .content_type("application/json")
+                       .json("erro caralho");
+            }
        }
     }
    
@@ -139,6 +147,8 @@ async fn add_new_vector(vec: Vec<f32>, answer: String){
     hnsw_list.insert_slice((vec.as_slice(), index_vector));
     let mut answers_write = ANSWERS.write().await;
     answers_write.insert(index_vector.to_string(), answer);
+    
+    print!("Aqui caralho {:?}", answers_write);
 }
 
 fn check_previous_searches(search_text : String) -> Result<()> {
@@ -190,11 +200,11 @@ fn check_previous_searches(search_text : String) -> Result<()> {
 async fn check_previous_searches_main(search_text : Vec<f32>) -> Result<String> {
 
     //let query = vectors[0].clone(); // for demo: search the first vector
-    let json = std::fs::read_to_string("emb.json")?;
-    let payload: EmbeddingResponse = serde_json::from_str(&json)?;
-    println!("Model: {}", payload.model);
+    //let json = std::fs::read_to_string("emb.json")?;
+    //let payload: EmbeddingResponse = serde_json::from_str(&json)?;
+    //println!("Model: {}", payload.model);
 
-    let vectors: Vec<Vec<f32>> = payload.embeddings;
+    //let vectors: Vec<Vec<f32>> = payload.embeddings;
 
     let k = 5;
     let ef_search = 50; 
@@ -202,7 +212,7 @@ async fn check_previous_searches_main(search_text : Vec<f32>) -> Result<String> 
     //let hnsw: Hnsw<f32, DistL2> = Hnsw::new(
     
     //let mut owned_map: Hnsw<f32, DistL2> = std::mem::take(&mut *searches);
-    let query = vectors[0].clone();
+    //let query = search_text;
     
     //*sec = owned_map;
 
@@ -212,7 +222,7 @@ async fn check_previous_searches_main(search_text : Vec<f32>) -> Result<String> 
     //*searches = owned_map; 
     println!("Top-{k} neighbors:");
     for n in results {
-       if n.distance < 0.3 {
+       if n.distance < 0.1 {
             //return answer, should be in the global
             let mut answer = ANSWERS.read().await;
             
@@ -222,7 +232,9 @@ async fn check_previous_searches_main(search_text : Vec<f32>) -> Result<String> 
 
         }else{
             //should only check the first that fits, if it doesn't, break
+            print!("Rola!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
             break;
+
         }
         println!("  id={}  dist={:.6}", n.d_id, n.distance);
     }
