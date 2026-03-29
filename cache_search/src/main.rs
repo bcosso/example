@@ -3,13 +3,13 @@ use actix_web::{cookie::time::Error, post, web::{get, Data, Json, Path}, App, Ht
 use data_struc::Order;
 use data_struc::PriceRanges;
 use rsocket_rust::Client;
-use serde_json::to_string;
+use serde_json::{Value, to_string};
 use tokio::runtime::Runtime;
 use tokio::time::{self, Duration, Instant};
 use rsocket_rust::prelude::*;
 use rsocket_rust::Result;
 use rsocket_rust_transport_tcp::TcpClientTransport;
-use std::{env, io};
+use std::{env, io, ptr::null};
 use std::collections::{HashMap, BTreeMap};
 use std::hash::Hash;
 use std::fmt::Write;
@@ -18,11 +18,19 @@ use ordered_float::OrderedFloat;
 use http::{Request, Response};
 use reqwest;
 use hnsw_rs::prelude::*; // Hnsw, DistL2, etc.
-use serde::{de::Error as OtherError, Deserialize};
-use once_cell::sync::Lazy;
+use serde::{de::Error as OtherError, Deserialize, Serialize};
+use once_cell::sync::{Lazy};
 use std::sync::{Arc, atomic::AtomicBool, atomic::Ordering};
 use tokio::sync::RwLock;
+use tokio::sync::{OnceCell};
 use thiserror::Error;
+use std::fs;
+use std::fs::File;
+use std::io::{BufReader, BufWriter, Write as OtherWrite};
+use std::path::Path as OtherPath;
+use std::any::Any;
+use crate::conn_manager::ConnManager;
+
 
 mod conn_manager;
 mod configs;
@@ -46,26 +54,125 @@ pub enum SearchError {
     Json(#[from] serde_json::Error),
 }
 
+const PATH_VEC: &str = "/home/henrico/projects/rust/example/cache_search/";
+static DIST: DistL2 = DistL2 {};
 
-static HNSW_INDEX: Lazy<Arc<RwLock<Hnsw<f32, DistL2>>>> = Lazy::new(|| {
-    //let json = std::fs::read_to_string("emb.json").expect("Failed to read emb.json");
-    //let payload: EmbeddingResponse = serde_json::from_str(&json).expect("Failed to parse JSON");
+
+static CONN: OnceCell<Arc<RwLock<ConnManager>>> = OnceCell::const_new();
+static HNSW_INDEX: OnceCell<Arc<RwLock<Hnsw<'static, f32, DistL2>>>> = OnceCell::const_new();
+static ANSWERS: OnceCell<Arc<RwLock<HashMap<String, String>>>> = OnceCell::const_new();
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct AnswerType{
+    pub response: String
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct RowPersist {
+    pub vector: Vec<f32> ,
+    pub id_vector: usize,
+    pub answer: AnswerType,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct MemRow{
+    pub Rows: RowPersist
+}
+
+async fn load_table_nimpha() -> Result<String>{
+    let peers = configs::read_config_file().unwrap();
+
+    let conn_lock = CONN.get().unwrap(); 
+
+    let mut conn = conn_lock.write().await;    
+
+    let table_str = "table_graph".to_string();
+    let alias_str = "".to_string();
+
+    //let json_vector = serde_json::to_string(&vector).expect("Serialization failed");
+    let payload = format!("{{\"table\":\"{table_str}\",\"alias\":\"{alias_str}\"}}");
+
+    // Debug: See what keys are actually available
+    println!("Available keys in connections: {:?}", conn.connections.keys().collect::<Vec<_>>());
+   
+    println!("Passou");
+    let result = execute_in_cluster("select_table", &payload, peers[0].clone(), &conn).await.unwrap();
+    println!("{:?}", result);
+    Ok(result)
+}
+
+
+async fn add_new_vector(vec: Vec<f32>, answer: String, mut index_vector: usize) {
+    let arc_index = HNSW_INDEX.get().expect("HNSW_INDEX not initialized");
+    let mut hnsw_list = arc_index.write().await;
+    if index_vector == 0{ 
+        index_vector = hnsw_list.get_nb_point();
+    }
     
-    //let mut hnsw = Hnsw::new(16, payload.embeddings.len(), 16, 200, DistL2::default());
-    let mut hnsw = Hnsw::new(16, 3, 16, 200, DistL2::default());
+    hnsw_list.insert_slice((vec.clone().as_slice(), index_vector.clone()));
+    
+    let arc_answers = ANSWERS.get().expect("HNSW_INDEX not initialized");
+    let mut answers_write = arc_answers.write().await;
+    answers_write.insert(index_vector.to_string(), answer.clone());
 
-    //for (i, vec) in payload.embeddings.into_iter().enumerate() {
-    //    hnsw.insert_slice((vec.as_slice(), i));
+    //let basename = "hnsw.dump"; // Must match the dump prefix exactly
+    
+    //let path_buf = std::path::PathBuf::from(PATH_VEC);
+
+    // Pass the &Path and the &str prefix separately
+    //if let Err(e) = hnsw_list.file_dump(&path_buf, basename) {
+    //    eprintln!("HNSW dump failed: {}", e);
     //}
+   
+    //let f_ans = File::create("answers.json").expect("Failed to create answers file");
+    //serde_json::to_writer(BufWriter::new(f_ans), &*answers_write).expect("Failed to write answers");
 
-    Arc::new(RwLock::new(hnsw))
-});
+    create_payload_save_nimpha(vec.clone(), index_vector.clone(), answer.clone()).await;
+    println!("\nNew vector added. Total points: {}", index_vector + 1);
+}
+pub async fn add_vector(vec:Vec<f32>, answer: String, mut index_vector: usize){
 
-pub static ANSWERS: Lazy<Arc<RwLock<HashMap<String, String>>>> =
-    Lazy::new(|| Arc::new(RwLock::new(HashMap::new())));
+    let arc_index = HNSW_INDEX.get().expect("HNSW_INDEX not initialized");
+    let mut hnsw_list = arc_index.write().await;
+    if index_vector == 0{ 
+        index_vector = hnsw_list.get_nb_point();
+    }
+    
+    hnsw_list.insert_slice((vec.clone().as_slice(), index_vector.clone()));
+
+
+    let arc_answers = ANSWERS.get().expect("HNSW_INDEX not initialized");
+    let mut answers_write = arc_answers.write().await;
+    answers_write.insert(index_vector.to_string(), answer.clone());
+
+
+}
+
+async fn create_payload_save_nimpha(vector: Vec<f32>, id:usize, answer: String){
+    let peers = configs::read_config_file().unwrap();
+
+    let conn_lock = CONN.get().unwrap(); 
+
+    let mut conn = conn_lock.write().await;    
+
+    let id_str = id.to_string();
+
+    let json_vector = serde_json::to_string(&vector).expect("Serialization failed");
+    let payload = format!("{{\"table\":\"table_graph\", \"body\":{{\"vector\":{json_vector},\"id_vector\":{id_str},\"answer\":{answer}}}}}");
+
+    let result = execute_in_cluster("insert_endpoint", &payload, peers[0].clone(), &conn).await.unwrap();
+    println!("{:?}", result);
+
+}
 
 #[actix_rt::main]
 async fn main() -> io::Result<()> {
+    init_conn().await;
+    //load_table_nimpha().await;
+//match CONN.set(Arc::new(RwLock::new(connec))) {
+//    Ok(_) => println!("Successfully initialized CONN"),
+//    Err(_) => println!("CONN was already initialized"),
+//}
         HttpServer::new(|| {
 //            let counter : u8 = 0;
 //            let mutex_counter = Data::new(Mutex::new(counter));
@@ -86,8 +193,44 @@ async fn main() -> io::Result<()> {
     .await
 }
 
+pub async fn init_conn() {
+    let peers = configs::read_config_file().unwrap();
+    let connec = conn_manager::create_instance(peers.clone()).await.unwrap();
+    let conn_arc = Arc::new(RwLock::new(connec));
+
+    // 1. Initialize CONN
+    CONN.set(conn_arc.clone()).ok();
+
+    if let Ok(contents) = load_table_nimpha().await{
+    
+        
+        // 2. Logic for HNSW_INDEX (Using conn_arc if needed)
+        let directory = std::path::Path::new(PATH_VEC);
+        let hnsw =
+            Hnsw::new(16, 1000, 16, 200, DIST);
+        HNSW_INDEX.set(Arc::new(RwLock::new(hnsw))).ok();
+
+        // 3. Logic for ANSWERS
+        let map =
+            HashMap::new();
+        ANSWERS.set(Arc::new(RwLock::new(map))).ok();
+        if contents != "null"{
+let rows: Vec<MemRow> = serde_json::from_str(&contents).expect("PArsing to object error");
+        for row in rows{
+
+            let row_value = row.clone();
+            add_vector(row.Rows.vector, row.Rows.answer.response, row.Rows.id_vector).await;
+
+        }
+        }
+    }
+}
+
 #[post("/request_search")]
 pub async fn request_search(post_data: Json<data_struc::PostQuery>) -> HttpResponse {
+    let mut peers = configs::read_config_file().unwrap();
+    let connec = conn_manager::create_instance(peers.clone()).await.unwrap();
+
     let mut text_result: &str = "";
     let mut cli = reqwest::Client::new();
     
@@ -112,12 +255,12 @@ pub async fn request_search(post_data: Json<data_struc::PostQuery>) -> HttpRespo
                     //insert into cache (HNSW_INDEX and ANSWERS)
                     let answer = result_response_search.unwrap().text().await;
                     let answer_cloned = answer.expect("REASON").clone();
-                    add_new_vector(vectors[0].clone(), answer_cloned.clone()).await;
+                    add_new_vector(vectors[0].clone(), answer_cloned.clone(), 0).await;
                     return HttpResponse::Ok()
                         .content_type("application/json")
                        .json(answer_cloned.clone());
                 }else{
-                    print!("ta fodido");
+
                     return HttpResponse::Ok()
                         .content_type("application/json")
                        .json(answer_is_inmem);
@@ -125,10 +268,10 @@ pub async fn request_search(post_data: Json<data_struc::PostQuery>) -> HttpRespo
 
             },
             Err(_) => {
-                print!("Erro caralho");
+
                 return HttpResponse::Ok()
                         .content_type("application/json")
-                       .json("erro caralho");
+                       .json("Error on checking previous searches");
             }
        }
     }
@@ -137,18 +280,6 @@ pub async fn request_search(post_data: Json<data_struc::PostQuery>) -> HttpRespo
             .await
             .unwrap()
 
-}
-
-
-
-async fn add_new_vector(vec: Vec<f32>, answer: String){
-    let mut hnsw_list = HNSW_INDEX.write().await;
-    let mut index_vector: usize = hnsw_list.get_nb_point();
-    hnsw_list.insert_slice((vec.as_slice(), index_vector));
-    let mut answers_write = ANSWERS.write().await;
-    answers_write.insert(index_vector.to_string(), answer);
-    
-    print!("Aqui caralho {:?}", answers_write);
 }
 
 fn check_previous_searches(search_text : String) -> Result<()> {
@@ -207,8 +338,9 @@ async fn check_previous_searches_main(search_text : Vec<f32>) -> Result<String> 
     //let vectors: Vec<Vec<f32>> = payload.embeddings;
 
     let k = 5;
-    let ef_search = 50; 
-    let mut searches = HNSW_INDEX.write().await;
+    let ef_search = 50;
+    let arc_index = HNSW_INDEX.get().expect("HNSW_INDEX not initialized");
+    let mut searches = arc_index.write().await;
     //let hnsw: Hnsw<f32, DistL2> = Hnsw::new(
     
     //let mut owned_map: Hnsw<f32, DistL2> = std::mem::take(&mut *searches);
@@ -224,7 +356,8 @@ async fn check_previous_searches_main(search_text : Vec<f32>) -> Result<String> 
     for n in results {
        if n.distance < 0.3 {
             //return answer, should be in the global
-            let mut answer = ANSWERS.read().await;
+            let arc_answers = ANSWERS.get().expect("HNSW_INDEX not initialized");
+            let mut answer = arc_answers.read().await;
             
             if let Some(result) = answer.get(&(n.d_id.to_string())){
                 return Ok(result.clone());
@@ -249,12 +382,15 @@ async fn execute_in_cluster(name_method: &str, data_json: &str, peer: configs::P
     let port_peer = peer.port;
     let host_peer = peer.ip;
     let host_server = format!("{host_peer}:{port_peer}");
-    println!("{}", name_peer);
+    println!("peer name {}", name_peer);
+    for (k, v) in conn.connections.clone(){
+        println!("{:?}", k);
+    }
 
     if let Some(cli) = conn.connections.get(&name_peer){    
         println!("GOT THE CONNECTION IN HASH");
         let method = "{\"method\":\"execute_something\"}";
-        let data = format!("{{\"method\":\"/{name_peer}/{name_method}\",\"payload\":{{\"query\":\"{data_json}\"}}}}");
+        let data = format!("{{\"method\":\"/{name_peer}/{name_method}\",\"payload\":{data_json}}}");
         let req = Payload::builder()
             .set_data_utf8(&data)
             .set_metadata_utf8(method)

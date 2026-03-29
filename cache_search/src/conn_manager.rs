@@ -29,7 +29,12 @@ impl ConnManager {
         println!("ANOTHER");
         for item in peers {
             println!("BeforeCC");
-            self.createClient(item).await;
+            let resp = self.createClient(item).await;
+            match resp {
+                Ok(_) => {},
+                Err(err1) => println!("Erro caralho {:?}", err1),
+                
+            }
             println!("ClientCreation");
         }
         println!("After {}",self.connections.len());
