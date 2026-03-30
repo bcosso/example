@@ -215,13 +215,13 @@ pub async fn init_conn() {
             HashMap::new();
         ANSWERS.set(Arc::new(RwLock::new(map))).ok();
         if contents != "null"{
-let rows: Vec<MemRow> = serde_json::from_str(&contents).expect("PArsing to object error");
-        for row in rows{
+            let rows: Vec<MemRow> = serde_json::from_str(&contents).expect("PArsing to object error");
+            for row in rows{
 
-            let row_value = row.clone();
-            add_vector(row.Rows.vector, row.Rows.answer.response, row.Rows.id_vector).await;
+                let row_value = row.clone();
+                add_vector(row.Rows.vector, row.Rows.answer.response, row.Rows.id_vector).await;
 
-        }
+            }
         }
     }
 }
@@ -365,7 +365,7 @@ async fn check_previous_searches_main(search_text : Vec<f32>) -> Result<String> 
 
         }else{
             //should only check the first that fits, if it doesn't, break
-            print!("Rola!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+
             break;
 
         }
