@@ -388,7 +388,7 @@ async fn execute_in_cluster(name_method: &str, data_json: &str, peer: configs::P
     }
 
     if let Some(cli) = conn.connections.get(&name_peer){    
-        println!("GOT THE CONNECTION IN HASH");
+
         let method = "{\"method\":\"execute_something\"}";
         let data = format!("{{\"method\":\"/{name_peer}/{name_method}\",\"payload\":{data_json}}}");
         let req = Payload::builder()
@@ -398,7 +398,6 @@ async fn execute_in_cluster(name_method: &str, data_json: &str, peer: configs::P
 
         let res = cli.request_response(req).await?;
 
-        println!("GOT A RESPONSE!");
         println!("{:?}", res);
 
         let result1 = match res{

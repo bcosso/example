@@ -32,7 +32,7 @@ impl ConnManager {
             let resp = self.createClient(item).await;
             match resp {
                 Ok(_) => {},
-                Err(err1) => println!("Erro caralho {:?}", err1),
+                Err(err1) => println!("Error: {:?}", err1),
                 
             }
             println!("ClientCreation");
