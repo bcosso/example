@@ -54,7 +54,6 @@ pub enum SearchError {
     Json(#[from] serde_json::Error),
 }
 
-const PATH_VEC: &str = "/home/henrico/projects/rust/example/cache_search/";
 static DIST: DistL2 = DistL2 {};
 
 
@@ -168,26 +167,12 @@ async fn create_payload_save_nimpha(vector: Vec<f32>, id:usize, answer: String){
 #[actix_rt::main]
 async fn main() -> io::Result<()> {
     init_conn().await;
-    //load_table_nimpha().await;
-//match CONN.set(Arc::new(RwLock::new(connec))) {
-//    Ok(_) => println!("Successfully initialized CONN"),
-//    Err(_) => println!("CONN was already initialized"),
-//}
-        HttpServer::new(|| {
-//            let counter : u8 = 0;
-//            let mutex_counter = Data::new(Mutex::new(counter));
-//            let peers = configs::read_config_file().unwrap();
-//            let conn = ConnectionManager::create_instance(peers);
-//            let mutex_connections = Data::new(Mutex::new(conn));
 
-                   
-            App::new()
-//                .app_data(Data::clone(&mutex_counter))
-//                .app_data(Data::clone(&mutex_connections))
-//                .wrap(middleware::Logger::default())
-                .service(request_search)
+    HttpServer::new(|| {
+       App::new()
+           .service(request_search)
 
-        })
+    })
     .bind("0.0.0.0:9090")?
     .run()
     .await
@@ -198,19 +183,13 @@ pub async fn init_conn() {
     let connec = conn_manager::create_instance(peers.clone()).await.unwrap();
     let conn_arc = Arc::new(RwLock::new(connec));
 
-    // 1. Initialize CONN
     CONN.set(conn_arc.clone()).ok();
 
     if let Ok(contents) = load_table_nimpha().await{
-    
-        
-        // 2. Logic for HNSW_INDEX (Using conn_arc if needed)
-        let directory = std::path::Path::new(PATH_VEC);
         let hnsw =
             Hnsw::new(16, 1000, 16, 200, DIST);
         HNSW_INDEX.set(Arc::new(RwLock::new(hnsw))).ok();
 
-        // 3. Logic for ANSWERS
         let map =
             HashMap::new();
         ANSWERS.set(Arc::new(RwLock::new(map))).ok();
@@ -282,76 +261,19 @@ pub async fn request_search(post_data: Json<data_struc::PostQuery>) -> HttpRespo
 
 }
 
-fn check_previous_searches(search_text : String) -> Result<()> {
-
-    let json = std::fs::read_to_string("emb.json")?;
-    let payload: EmbeddingResponse = serde_json::from_str(&json)?;
-    println!("Model: {}", payload.model);
-
-    let vectors: Vec<Vec<f32>> = payload.embeddings;
-
-    // Optional safety: ensure all vectors have the same dimension
-    let dim = vectors.first().map(|v| v.len()).unwrap_or(0);
-    assert!(dim > 0, "No embeddings found");
-    assert!(vectors.iter().all(|v| v.len() == dim), "Inconsistent dimensions");
-
-    let max_nb_connection = 16;
-    let max_elements = vectors.len();
-    let max_layer = 16;
-    let ef_construction = 200;
-
-    let hnsw: Hnsw<f32, DistL2> = Hnsw::new(
-        max_nb_connection,
-        max_elements,
-        max_layer,
-        ef_construction,
-        DistL2::default(), // L2 distance. 
-    );
-
-
-    for (id, v) in vectors.iter().enumerate() {
-        hnsw.insert_slice((v.as_slice(), id));
-    }
-
-
-    let query = vectors[0].clone(); // for demo: search the first vector
-
-    let k = 5;
-    let ef_search = 50; 
-    let results = hnsw.search(query.as_slice(), k, ef_search); 
-    println!("Top-{k} neighbors:");
-    for n in results {
-       println!("  id={}  dist={:.6}", n.d_id, n.distance);
-    }
-
-    Ok(())
-}
 
 
 async fn check_previous_searches_main(search_text : Vec<f32>) -> Result<String> {
 
-    //let query = vectors[0].clone(); // for demo: search the first vector
-    //let json = std::fs::read_to_string("emb.json")?;
-    //let payload: EmbeddingResponse = serde_json::from_str(&json)?;
-    //println!("Model: {}", payload.model);
-
-    //let vectors: Vec<Vec<f32>> = payload.embeddings;
 
     let k = 5;
     let ef_search = 50;
     let arc_index = HNSW_INDEX.get().expect("HNSW_INDEX not initialized");
     let mut searches = arc_index.write().await;
-    //let hnsw: Hnsw<f32, DistL2> = Hnsw::new(
-    
-    //let mut owned_map: Hnsw<f32, DistL2> = std::mem::take(&mut *searches);
-    //let query = search_text;
-    
-    //*sec = owned_map;
 
-    //let results = searches.search(query.as_slice(), k, ef_search); 
     let mut results = searches.search(&search_text, k, ef_search);
     results.sort_by(|a, b| a.distance.partial_cmp(&b.distance).unwrap_or(std::cmp::Ordering::Equal));
-    //*searches = owned_map; 
+
     println!("Top-{k} neighbors:");
     for n in results {
        if n.distance < 0.3 {
