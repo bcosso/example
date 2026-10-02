@@ -1,18 +1,18 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+
+	"github.com/bcosso/sqlparserproject"
+)
 
 // ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 func main() {
-	var bin Executable
 
-	program := []uint32{
-		0x00010042,
-		0x00120010,
-		0x00030000,
-	}
+	sql := "select field1, field2 from table01 where field3 = 1 or (field4 > 5 and field5 = 'active')"
+	bin := CompileSQL(sql)
 
-	bin.Program = program
 	row := make(map[string]interface{})
 
 	RunVM(row, bin)
@@ -45,6 +45,35 @@ func RunVM(row map[string]interface{}, bin Executable) {
 
 		fmt.Println(opcode == POP)
 		fmt.Println(arg == 0x000010)
+
+	}
+
+}
+func CompileSQL(query string) Executable {
+	var bin Executable
+
+	ast := sqlparserproject.ExecuteParsingProcess(query)
+	ReadThrough(ast)
+
+	mocProgram := []uint32{
+		0x00010042,
+		0x00120010,
+		0x00030000,
+	}
+
+	bin.Program = mocProgram
+	return bin
+
+}
+
+func ReadThrough(tree sqlparserproject.CommandTree) {
+	for _, leaf := range tree.CommandParts {
+		switch strings.ToLower(leaf.TypeToken) {
+		case "select":
+			break
+		default:
+			break
+		}
 
 	}
 
