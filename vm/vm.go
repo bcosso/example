@@ -20,6 +20,19 @@ func main() {
 
 ///////////////////////////////////////////////////////////////////Test Only//////////////////////////////////////////////////////////////////////////
 
+type ExecuteActions interface {
+	ExecuteJoin(tree *sqlparserproject.CommandTree)
+}
+type CustomAction struct {
+	ExecuteActions
+}
+
+var _hAction ExecuteActions
+
+func SetActionHandler(hAction ExecuteActions) {
+	_hAction = hAction
+}
+
 type Executable struct {
 	Program []uint32
 	Data    []string
@@ -53,7 +66,8 @@ func CompileSQL(query string) Executable {
 	var bin Executable
 
 	ast := sqlparserproject.ExecuteParsingProcess(query)
-	ReadThrough(ast)
+
+	ReadThrough(ast, &bin)
 
 	mocProgram := []uint32{
 		0x00010042,
@@ -62,15 +76,18 @@ func CompileSQL(query string) Executable {
 	}
 
 	bin.Program = mocProgram
+
 	return bin
 
 }
 
-func ReadThrough(tree sqlparserproject.CommandTree) {
+func ReadThrough(tree sqlparserproject.CommandTree, bin *Executable) {
 	for _, leaf := range tree.CommandParts {
 		switch strings.ToLower(leaf.TypeToken) {
 		case "select":
 			break
+		case "join":
+			_hAction.ExecuteJoin(&tree)
 		default:
 			break
 		}
